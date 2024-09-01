@@ -1,0 +1,119 @@
+import cv2
+import numpy as np
+import mediapipe as mp
+import time
+
+# Initialize MediaPipe Hands and Drawing utilities
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
+hands = mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.7)
+
+# Define a mapping from finger states to phrases and corresponding states
+gesture_map = {
+    "10000": "Hi, My name is Athmiya Varshini",  # Thumb up
+    "01000": "How are you?",  # Index finger extended
+    "11111": "How can I help you?",  # All fingers extended
+    "01100": "Thank You!!"  # Index and middle fingers extended (peace sign)
+}
+
+# Define conversation states
+conversation_states = {
+    "start": "10000",  # Thumb up (Hi)
+    "intro": "01000",  # Index finger extended (How are you?)
+    "how_are_you": "11111",  # All fingers extended (How can I help you?)
+    "help": "01100"  # Index and middle fingers extended (Thank You!!)
+}
+
+# Define responses for each state
+responses = {
+    "start": "Hi, My name is Likitha Gowthami",
+    "intro": "How are you?",
+    "how_are_you": "I'm fine, thank you!",
+    "help": "Do you have ML notes?",
+    "end": "Thank You!!"
+}
+
+# Define initial state
+current_state = "start"
+
+def detect_gesture(fingers):
+    """Converts list of finger states to a gesture string."""
+    return ''.join(map(str, fingers))
+
+def count_fingers(hand_landmarks):
+    """Counts fingers extended using landmarks."""
+    landmarks = hand_landmarks.landmark
+    fingers = []
+
+    # Thumb: Check if thumb tip is to the right of the thumb IP joint
+    if landmarks[mp_hands.HandLandmark.THUMB_TIP].x < landmarks[mp_hands.HandLandmark.THUMB_IP].x:
+        fingers.append(1)
+    else:
+        fingers.append(0)
+
+    # For other fingers: Check if the tip is above the PIP joint
+    for lm_index in [mp_hands.HandLandmark.INDEX_FINGER_TIP, mp_hands.HandLandmark.MIDDLE_FINGER_TIP,
+                     mp_hands.HandLandmark.RING_FINGER_TIP, mp_hands.HandLandmark.PINKY_TIP]:
+        if landmarks[lm_index].y < landmarks[lm_index - 2].y:
+            fingers.append(1)
+        else:
+            fingers.append(0)
+    
+    # Debugging: Print finger states
+    print(f"Finger states: {fingers}")
+    return fingers
+
+def get_next_state(gesture):
+    """Returns the next state based on the current gesture."""
+    for state, gesture_code in conversation_states.items():
+        if gesture == gesture_code:
+            return state
+    return None
+
+def gesture_interactive_conversation(): 
+    """Main function to run the gesture-based interactive conversation."""
+    global current_state
+    cap = cv2.VideoCapture(0)
+    last_input_time = time.time()
+    delay_seconds = 1.5  # Adjusted for quicker input
+
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame = cv2.flip(frame, 1)  # Flip the frame to create a mirror effect
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        result_hands = hands.process(frame_rgb)
+
+        if result_hands.multi_hand_landmarks:
+            for hand_landmarks in result_hands.multi_hand_landmarks:
+                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+                fingers = count_fingers(hand_landmarks)
+                gesture = detect_gesture(fingers)
+
+                # Debugging: Print detected gesture
+                print(f"Detected gesture: {gesture}")
+
+                # Check for gesture and state change
+                if time.time() - last_input_time > delay_seconds:
+                    next_state = get_next_state(gesture)
+                    if next_state and next_state != current_state:
+                        current_state = next_state
+                        last_input_time = time.time()
+
+        response = responses[current_state]
+
+        # Debugging: Print current state and response
+        print(f"Current state: {current_state}, Response: {response}")
+
+        cv2.putText(frame, f'Sentence: {response}', (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        cv2.imshow('Gesture Interactive Conversation', frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+gesture_interactive_conversation()
